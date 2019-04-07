@@ -6,7 +6,7 @@ import matplotlib.colors as colors
 import multiprocessing as mp
 
 limit=150
-N=10000
+N=5000
 dpi=800
 
 fig, ax = plt.subplots()
@@ -51,12 +51,15 @@ pool.close()
 tmp = []
 while not queue.empty():
     tmp.append(queue.get())
+del queue
 tmp=sorted(tmp)
 half_final_image = tmp[0][1]
 for img_piece in tmp[1:]:
     _, img_piece = img_piece
     half_final_image = np.concatenate((half_final_image,img_piece),1)
+del tmp
 final_image = np.concatenate((np.flip(half_final_image,0),half_final_image),0)
+del half_final_image
 plt.imshow(final_image)
 fig.savefig('mandelbrot_{}dpi_{}matrix'.format(dpi,N),dpi=dpi)
 #plt.show()
