@@ -1,23 +1,34 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from itertools import product
+import itertools as it
 import matplotlib.cm as cmx
 import matplotlib.colors as colors
+import multiprocessing as mp
 
-limit=20
+limit=150
+N=10000
+dpi=800
 
-xdata, ydata = [], []
 fig, ax = plt.subplots()
-ax.grid()
+ax.grid(False)
+ax.set_axis_off()
 normalize = colors.Normalize(0,limit)
 cm = plt.get_cmap('plasma')
 scalarMap = cmx.ScalarMappable(norm=normalize, cmap=cm)
 
 squared_modulus = lambda x : x.real*x.real + x.imag*x.imag
-def data_gen():
-    while True:
-        u=np.random.uniform(*ax.get_xlim())
-        v=np.random.uniform(*ax.get_ylim())
+
+def compute_range(start,end,index,pieces_nb):
+    return (start+index*(end-start)/pieces_nb,start+(index+1)*(end-start)/pieces_nb)
+
+def data_gen(queue,index,total):
+    startx, endx = compute_range(-1.6,1.5,index,total)
+    print("process {} computing from {} to {}".format(index,startx,endx))
+    result = np.zeros((N//2,N//total,3))
+    count = 0
+    for u,v in it.product(np.linspace(startx,endx,N//total),np.linspace(0,1.6,N//2)):
+        if count%(N//total*N//2//30) == 0:
+            print("process {}: {:.2f}%".format(index,100*count/(N//total*N//2)))
         z0=complex(0)
         for k in range(limit):
             if squared_modulus(z0) <= 4:
@@ -25,26 +36,27 @@ def data_gen():
             else:
                 break
         if k == limit-1:
-            color = -1
+            result[count%(N//2)][count//(N//2)] = [0,0,0]
         else:
-            color = k
-        yield u,v,color
+            result[count%(N//2)][count//(N//2)] = scalarMap.to_rgba(k)[:-1]
+        count+=1
+    queue.put((index,result))
+    print("process {} finished".format(index))
 
-
-def init():
-    ax.set_ylim(-2,2)
-    ax.set_xlim(-2,2)
-
-def run(data):
-    u,v,c = data
-    if c==-1:
-        result=ax.scatter(u,v,s=1,c='black')
-        result2=ax.scatter(u,-v,s=1,c='black')
-    else:
-        result=ax.scatter(u,v,s=1,c=scalarMap.to_rgba(c))
-        result2=ax.scatter(u,-v,s=1,c=scalarMap.to_rgba(c))
-    return result,result2
-
-import matplotlib.animation as animation
-ani = animation.FuncAnimation(fig, run, data_gen, blit=False, interval = 1, repeat = False, init_func=init)
-plt.show()
+m = mp.Manager()
+queue=m.Queue()
+pool=mp.Pool()
+pool.starmap(data_gen, zip(it.repeat(queue),range(0,mp.cpu_count()),it.repeat(mp.cpu_count())))
+pool.close()
+tmp = []
+while not queue.empty():
+    tmp.append(queue.get())
+tmp=sorted(tmp)
+half_final_image = tmp[0][1]
+for img_piece in tmp[1:]:
+    _, img_piece = img_piece
+    half_final_image = np.concatenate((half_final_image,img_piece),1)
+final_image = np.concatenate((np.flip(half_final_image,0),half_final_image),0)
+plt.imshow(final_image)
+fig.savefig('mandelbrot_{}dpi_{}matrix'.format(dpi,N),dpi=dpi)
+#plt.show()
