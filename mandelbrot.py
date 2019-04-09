@@ -1,21 +1,22 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from itertools import product
+import itertools as it
 import matplotlib.cm as cmx
-import matplotlib.colors as colors
+import multiprocessing as mp
 
-limit=20
+limit=500
+N=10**4
+assert(mp.cpu_count()<=mp.cpu_count())
+assert(N <= (2**32-1)/(2*mp.cpu_count()))
 
-xdata, ydata = [], []
 fig, ax = plt.subplots()
 ax.grid()
-normalize = colors.Normalize(0,limit)
-cm = plt.get_cmap('plasma')
-scalarMap = cmx.ScalarMappable(norm=normalize, cmap=cm)
+A = mp.Array('d',2*N*mp.cpu_count(),lock=False)
 
 squared_modulus = lambda x : x.real*x.real + x.imag*x.imag
-def data_gen():
-    while True:
+def sub_data_gen(index):
+    np.random.seed()
+    for i in range(N):
         u=np.random.uniform(*ax.get_xlim())
         v=np.random.uniform(*ax.get_ylim())
         z0=complex(0)
@@ -25,25 +26,26 @@ def data_gen():
             else:
                 break
         if k == limit-1:
-            color = -1
-        else:
-            color = k
-        yield u,v,color
+            A[2*N*index+2*i]=u
+            A[2*N*index+2*i+1]=v
 
+            
+
+def data_gen():
+    while True:
+        pool=mp.Pool()
+        pool.map(sub_data_gen, range(0,mp.cpu_count()))
+        pool.close()
+        pool.join()
+        yield zip(*filter(lambda x : x[0] != 0 and x[1] != 0,zip(*[iter(A)]*2)))
 
 def init():
     ax.set_ylim(-2,2)
     ax.set_xlim(-2,2)
 
 def run(data):
-    u,v,c = data
-    if c==-1:
-        result=ax.scatter(u,v,s=1,c='black')
-        result2=ax.scatter(u,-v,s=1,c='black')
-    else:
-        result=ax.scatter(u,v,s=1,c=scalarMap.to_rgba(c))
-        result2=ax.scatter(u,-v,s=1,c=scalarMap.to_rgba(c))
-    return result,result2
+    u,v = data
+    return ax.scatter(u,v,marker='.',s=.1,c='black'), ax.scatter(u,[-x for x in v],marker='.',s=.1,c='black')
 
 import matplotlib.animation as animation
 ani = animation.FuncAnimation(fig, run, data_gen, blit=False, interval = 1, repeat = False, init_func=init)
